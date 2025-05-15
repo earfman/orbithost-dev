@@ -1,0 +1,99 @@
+# OrbitHost .gitignore
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# IDEs and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Fly.io
+.fly/
+
+# Logs
+logs/
+*.log
+
+# Database
+*.sqlite3
+*.db
+
+# Stripe
+stripe.exe
+
+# Playwright
+playwright-report/
+test-results/
+
+# Private components (not for public repository)
+private/
+*_private.py
+*_private.js
+
+# Files with proprietary features
+backend/app/api/endpoints/domains.py
+backend/app/api/endpoints/billing.py
+backend/app/api/endpoints/users.py
+backend/app/api/endpoints/ai_webhooks.py
+backend/app/models/domain.py
+backend/app/services/domain_service.py
+
+# Use public versions instead
+backend/app/services/deployment_service.py
+backend/app/services/fly_service.py
+backend/app/api/routes.py
+
+# Private documentation
+myrules.txt
+project_building_guide.md
+PROJECT_TRACKING.md
+DECISIONS.md
+
+# README.md is now the public version, so don't ignore it
+# !README.md

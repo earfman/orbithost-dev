@@ -1,0 +1,17 @@
+fastapi>=0.95.0
+uvicorn>=0.21.0
+pydantic>=2.0.0
+httpx>=0.24.0
+python-dotenv>=1.0.0
+python-multipart>=0.0.6
+sqlalchemy>=2.0.0
+asyncpg>=0.27.0
+pytest>=7.3.1
+pytest-asyncio>=0.21.0
+alembic>=1.10.4
+supabase>=1.0.3
+playwright>=1.32.0
+stripe>=5.4.0
+prometheus-fastapi-instrumentator>=5.10.0
+structlog>=23.1.0
+tenacity>=8.2.2
