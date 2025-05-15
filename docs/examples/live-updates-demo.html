@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OrbitHost Live Updates Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        
+        .card {
+            background-color: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-connected { background-color: #4CAF50; }
+        .status-disconnected { background-color: #F44336; }
+        
+        .deployment {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #ddd;
+        }
+        
+        .deployment-pending { border-left-color: #FF9800; background-color: #FFF3E0; }
+        .deployment-deployed { border-left-color: #4CAF50; background-color: #E8F5E9; }
+        .deployment-failed { border-left-color: #F44336; background-color: #FFEBEE; }
+        
+        .deployment-info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .deployment-time {
+            font-size: 12px;
+            color: #999;
+        }
+        
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        #log {
+            height: 200px;
+            overflow-y: auto;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .log-time {
+            color: #999;
+            margin-right: 10px;
+        }
+        
+        .log-info { color: #2196F3; }
+        .log-success { color: #4CAF50; }
+        .log-error { color: #F44336; }
+    </style>
+</head>
+<body>
+    <h1>OrbitHost Live Updates Demo</h1>
+    
+    <div class="card">
+        <h2>Connection Status</h2>
+        <p>
+            <span id="connection-indicator" class="status-indicator status-disconnected"></span>
+            <span id="connection-status">Disconnected</span>
+        </p>
+        <button id="connect-button" class="button">Connect</button>
+        <button id="disconnect-button" class="button" disabled>Disconnect</button>
+    </div>
+    
+    <div class="card">
+        <h2>Latest Deployment</h2>
+        <div id="deployment-container">
+            <div id="no-deployment" class="deployment">
+                No deployments received yet. Connect to start receiving updates.
+            </div>
+            <div id="deployment-details" style="display: none;" class="deployment">
+                <h3>Repository: <span id="deployment-repo"></span></h3>
+                <div id="deployment-status"></div>
+                <div class="deployment-info">
+                    <p><strong>Commit:</strong> <span id="deployment-commit"></span></p>
+                    <p><strong>Author:</strong> <span id="deployment-author"></span></p>
+                    <p><strong>Message:</strong> <span id="deployment-message"></span></p>
+                    <p><strong>URL:</strong> <a id="deployment-url" href="#" target="_blank"></a></p>
+                </div>
+                <div class="deployment-time">
+                    <span id="deployment-time"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h2>Event Log</h2>
+        <div id="log"></div>
+    </div>
+    
+    <script>
+        class OrbitHostLiveUpdates {
+            constructor(options = {}) {
+                this.repository = options.repository; // Format: owner/repo
+                this.baseUrl = options.baseUrl || 'https://api.orbithost.app';
+                this.autoReload = options.autoReload || false;
+                this.onUpdate = options.onUpdate || (() => {});
+                this.onConnect = options.onConnect || (() => {});
+                this.onDisconnect = options.onDisconnect || (() => {});
+                this.eventSource = null;
+                this.connectionAttempts = 0;
+                this.maxConnectionAttempts = options.maxConnectionAttempts || 5;
+                this.reconnectDelay = options.reconnectDelay || 3000;
+            }
+
+            connect() {
+                if (!this.repository) {
+                    console.error('OrbitHost Live Updates: Repository is required');
+                    return;
+                }
+
+                // Close any existing connection
+                this.disconnect();
+
+                try {
+                    // Create a new SSE connection
+                    const url = `${this.baseUrl}/sse/deployments/${encodeURIComponent(this.repository)}`;
+                    this.eventSource = new EventSource(url);
+
+                    // Set up event handlers
+                    this.eventSource.addEventListener('connection_established', (event) => {
+                        console.log('OrbitHost Live Updates: Connected');
+                        this.connectionAttempts = 0;
+                        const data = JSON.parse(event.data);
+                        this.onConnect(data);
+                    });
+
+                    this.eventSource.addEventListener('deployment_update', (event) => {
+                        const data = JSON.parse(event.data);
+                        console.log(`OrbitHost Live Updates: Deployment status: ${data.status}`);
+                        
+                        this.onUpdate(data);
+                        
+                        // Auto-reload if enabled and deployment is successful
+                        if (this.autoReload && data.status === 'deployed') {
+                            console.log('OrbitHost Live Updates: Auto-reloading page');
+                            setTimeout(() => window.location.reload(), 1000);
+                        }
+                    });
+
+                    this.eventSource.addEventListener('error', (event) => {
+                        console.error('OrbitHost Live Updates: Connection error', event);
+                        this.disconnect();
+                        
+                        // Attempt to reconnect
+                        if (this.connectionAttempts < this.maxConnectionAttempts) {
+                            this.connectionAttempts++;
+                            console.log(`OrbitHost Live Updates: Reconnecting (attempt ${this.connectionAttempts}/${this.maxConnectionAttempts})`);
+                            setTimeout(() => this.connect(), this.reconnectDelay);
+                        } else {
+                            console.error('OrbitHost Live Updates: Max connection attempts reached');
+                            this.onDisconnect();
+                        }
+                    });
+                } catch (error) {
+                    console.error('OrbitHost Live Updates: Failed to connect', error);
+                }
+            }
+
+            disconnect() {
+                if (this.eventSource) {
+                    this.eventSource.close();
+                    this.eventSource = null;
+                    this.onDisconnect();
+                }
+            }
+        }
+
+        // DOM Elements
+        const connectButton = document.getElementById('connect-button');
+        const disconnectButton = document.getElementById('disconnect-button');
+        const connectionStatus = document.getElementById('connection-status');
+        const connectionIndicator = document.getElementById('connection-indicator');
+        const noDeployment = document.getElementById('no-deployment');
+        const deploymentDetails = document.getElementById('deployment-details');
+        const deploymentRepo = document.getElementById('deployment-repo');
+        const deploymentStatus = document.getElementById('deployment-status');
+        const deploymentCommit = document.getElementById('deployment-commit');
+        const deploymentAuthor = document.getElementById('deployment-author');
+        const deploymentMessage = document.getElementById('deployment-message');
+        const deploymentUrl = document.getElementById('deployment-url');
+        const deploymentTime = document.getElementById('deployment-time');
+        const logContainer = document.getElementById('log');
+
+        // Add log entry
+        function addLogEntry(message, type = 'info') {
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry log-${type}`;
+            
+            const time = new Date().toLocaleTimeString();
+            logEntry.innerHTML = `<span class="log-time">${time}</span> ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Update deployment UI
+        function updateDeploymentUI(data) {
+            noDeployment.style.display = 'none';
+            deploymentDetails.style.display = 'block';
+            
+            deploymentRepo.textContent = data.repository;
+            deploymentStatus.textContent = `Status: ${data.status}`;
+            deploymentCommit.textContent = data.commit_sha;
+            deploymentAuthor.textContent = data.author;
+            deploymentMessage.textContent = data.commit_message;
+            
+            if (data.url) {
+                deploymentUrl.textContent = data.url;
+                deploymentUrl.href = data.url;
+            } else {
+                deploymentUrl.textContent = 'Not available';
+                deploymentUrl.href = '#';
+            }
+            
+            deploymentTime.textContent = `Last updated: ${new Date(data.timestamp).toLocaleString()}`;
+            
+            // Update classes
+            deploymentDetails.className = `deployment deployment-${data.status}`;
+        }
+
+        // Initialize OrbitHost Live Updates
+        let liveUpdates = null;
+
+        // Connect button
+        connectButton.addEventListener('click', () => {
+            const repository = prompt('Enter repository (format: owner/repo):', 'your-username/your-repo');
+            
+            if (!repository) {
+                addLogEntry('Connection cancelled', 'error');
+                return;
+            }
+            
+            addLogEntry(`Connecting to ${repository}...`);
+            
+            liveUpdates = new OrbitHostLiveUpdates({
+                repository: repository,
+                baseUrl: window.location.origin, // Use the same origin as the demo page
+                onConnect: (data) => {
+                    connectionStatus.textContent = 'Connected';
+                    connectionIndicator.className = 'status-indicator status-connected';
+                    connectButton.disabled = true;
+                    disconnectButton.disabled = false;
+                    
+                    addLogEntry(`Connected to ${repository}`, 'success');
+                },
+                onDisconnect: () => {
+                    connectionStatus.textContent = 'Disconnected';
+                    connectionIndicator.className = 'status-indicator status-disconnected';
+                    connectButton.disabled = false;
+                    disconnectButton.disabled = true;
+                    
+                    addLogEntry('Disconnected', 'error');
+                },
+                onUpdate: (data) => {
+                    addLogEntry(`Deployment update: ${data.status} (${data.commit_sha.substring(0, 7)})`, data.status === 'deployed' ? 'success' : (data.status === 'failed' ? 'error' : 'info'));
+                    updateDeploymentUI(data);
+                }
+            });
+            
+            liveUpdates.connect();
+        });
+
+        // Disconnect button
+        disconnectButton.addEventListener('click', () => {
+            if (liveUpdates) {
+                liveUpdates.disconnect();
+                addLogEntry('Manually disconnected');
+            }
+        });
+
+        // Initial log entry
+        addLogEntry('Demo initialized. Click "Connect" to start receiving deployment updates.');
+    </script>
+</body>
+</html>
