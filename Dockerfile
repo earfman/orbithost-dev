@@ -15,18 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Frontend build
-FROM node:18-alpine as frontend-build
-
+# Stage 2: Frontend build - temporarily disabled until frontend is implemented
+# Placeholder stage for now
+FROM alpine:latest as frontend-build
 WORKDIR /app
-
-# Install frontend dependencies
-COPY frontend/package*.json ./
-RUN npm install
-
-# Build frontend
-COPY frontend/ .
-RUN npm run build
+RUN mkdir -p build
 
 # Stage 3: Production image
 FROM python:3.9-slim
