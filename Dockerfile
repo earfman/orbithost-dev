@@ -61,8 +61,8 @@ COPY --from=frontend-build /app/build /app/frontend/build
 
 # Install Playwright browsers
 RUN pip install playwright && \
-    playwright install chromium && \
-    playwright install-deps chromium
+    python -m playwright install chromium && \
+    python -m playwright install-deps chromium
 
 # Set environment variables
 ENV PYTHONPATH=/app
