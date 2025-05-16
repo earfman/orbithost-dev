@@ -75,5 +75,5 @@ USER orbituser
 # Expose the port
 EXPOSE 8000
 
-# Command to run the application
-CMD ["python", "backend/main.py"]
+# Command to run the application with uvicorn directly
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
