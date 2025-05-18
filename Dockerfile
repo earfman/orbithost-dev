@@ -15,21 +15,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Stage 2: Frontend build - temporarily disabled until frontend is implemented
-# Placeholder stage for now
-FROM alpine:latest as frontend-build
+# Stage 2: Frontend build
+FROM node:18-alpine as frontend-build
 WORKDIR /app
+
+# Install dependencies
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci
+
+# Copy frontend source
+COPY frontend/ ./
+
+# Build the frontend
+RUN npm run build
+
+# Output is in the .next directory
 RUN mkdir -p build
+RUN cp -r .next build/
+RUN cp -r public build/
 
 # Stage 3: Production image
 FROM python:3.9-slim
 
 WORKDIR /app
 
-# Install system dependencies including Playwright requirements
+# Install system dependencies including Playwright requirements and NGINX
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     gnupg \
+    nginx \
+    git \
+    curl \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \
@@ -57,23 +73,56 @@ COPY --from=backend-build /usr/local/lib/python3.9/site-packages /usr/local/lib/
 COPY backend/ /app/backend/
 
 # Copy frontend build from frontend-build stage
-COPY --from=frontend-build /app/build /app/frontend/build
+COPY --from=frontend-build /app/build/.next /app/frontend/.next
+COPY --from=frontend-build /app/build/public /app/frontend/public
+COPY frontend/package.json /app/frontend/
+# Copy configuration files individually to avoid errors
+COPY frontend/package.json /app/frontend/
+# Create a shell script to handle optional files
+RUN echo '#!/bin/sh' > /tmp/copy_optional.sh && \
+    echo 'if [ -f /tmp/frontend/next.config.js ]; then cp /tmp/frontend/next.config.js /app/frontend/; fi' >> /tmp/copy_optional.sh && \
+    echo 'if [ -f /tmp/frontend/package-lock.json ]; then cp /tmp/frontend/package-lock.json /app/frontend/; fi' >> /tmp/copy_optional.sh && \
+    chmod +x /tmp/copy_optional.sh
+# Create temp directory and copy files there first
+RUN mkdir -p /tmp/frontend
+COPY frontend/ /tmp/frontend/
+# Run the script to handle optional files
+RUN /tmp/copy_optional.sh
 
 # Install Playwright browsers
 RUN pip install playwright && \
     python -m playwright install chromium && \
     python -m playwright install-deps chromium
 
+# Create hosting directories
+RUN mkdir -p /var/www/orbithost/sites \
+    && mkdir -p /var/www/orbithost/templates \
+    && mkdir -p /etc/nginx/sites-available \
+    && mkdir -p /etc/nginx/sites-enabled
+
+# Copy NGINX templates
+COPY templates/nginx.conf /var/www/orbithost/templates/
+COPY templates/nginx-site.conf /etc/nginx/sites-available/orbithost.conf
+
+# Enable the NGINX site
+RUN ln -sf /etc/nginx/sites-available/orbithost.conf /etc/nginx/sites-enabled/
+
 # Set environment variables
 ENV PYTHONPATH=/app
 ENV PORT=8000
 
-# Create a non-root user to run the application
-RUN useradd -m orbituser
-USER orbituser
+# Create necessary directories with proper permissions
+RUN mkdir -p /var/log/nginx && \
+    mkdir -p /var/www/orbithost/logs && \
+    chown -R www-data:www-data /var/www/orbithost && \
+    chmod -R 755 /var/www/orbithost
 
-# Expose the port
-EXPOSE 8000
+# Copy startup script
+COPY scripts/start-services.sh /app/start-services.sh
+RUN chmod +x /app/start-services.sh
 
-# Command to run the application with uvicorn directly
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Expose ports
+EXPOSE 8000 80 443
+
+# Command to run both NGINX and the FastAPI application
+CMD ["/app/start-services.sh"]
