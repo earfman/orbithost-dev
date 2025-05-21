@@ -622,7 +622,7 @@ async def get_context_store() -> OrbitContextStore:
         # Use hardcoded values if environment variables are not found
         if not supabase_url or not supabase_key:
             supabase_url = "https://vyrlsfrohzaopgqndxgv.supabase.co"
-            supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ5cmxzZnJvaHphb3BncW5keGd2Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NzgwMzM5MywiZXhwIjoyMDYzMzc5MzkzfQ.YY4nhxM5xfy2rdhFVVzP6YBZjQ4fDiJ_7RfvGnMLkts"
+            supabase_key = os.getenv("SUPABASE_KEY")
         
         _context_store = OrbitContextStore()
         _context_store.supabase_client = create_client(supabase_url, supabase_key)

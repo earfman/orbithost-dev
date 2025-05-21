@@ -7,6 +7,16 @@
 .env.test.local
 .env.production.local
 
+# Security-sensitive files
+**/keys_backup/
+**/secrets/
+**/*_key*.json
+**/*_credentials*.json
+**/*_secret*.json
+**/credentials.json
+**/secrets.json
+**/config.local.json
+
 # Python
 __pycache__/
 *.py[cod]
@@ -93,7 +103,7 @@ backend/app/api/routes.py
 myrules.txt
 project_building_guide.md
 PROJECT_TRACKING.md
-DECISIONS.md
+# DECISIONS.md - temporarily allowing edits
 
 # README.md is now the public version, so don't ignore it
 # !README.md
