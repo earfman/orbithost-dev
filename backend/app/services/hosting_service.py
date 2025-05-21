@@ -5,7 +5,7 @@ import subprocess
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from app.models.deployment import Deployment, DeploymentStatus
+from app.models.deployment import Deployment, DeploymentStatus, DeploymentType
 from app.utils.metrics import track_deployment_time, track_deployment_status
 
 logger = logging.getLogger(__name__)
@@ -48,11 +48,15 @@ class HostingService:
                 site_id=site_id
             )
             
-            # Build the site
-            build_result = await self._build_site(
+            # Build the site with caching
+            build_result = await self._build_site_with_cache(
                 repo_path=repo_path,
-                site_id=site_id
+                site_id=site_id,
+                commit_sha=deployment.commit_sha
             )
+            
+            # Update deployment with cache hit information
+            deployment.build_cache_hit = build_result.get("cache_hit", False)
             
             # Configure the web server
             await self._configure_webserver(
@@ -290,6 +294,195 @@ class HostingService:
             raise Exception(f"Command failed: {error_message}")
         
         return stdout.decode().strip()
+    
+    async def deploy_preview(self, deployment: Deployment) -> Dict[str, Any]:
+        """
+        Deploy a preview version of a site.
+        
+        Args:
+            deployment: The deployment to create a preview for
+            
+        Returns:
+            A dictionary with preview deployment information
+        """
+        logger.info(f"Creating preview for {deployment.repository_name} @ {deployment.commit_sha}")
+        
+        # Start tracking deployment time
+        start_time = datetime.now()
+        
+        try:
+            # Generate a preview site ID
+            preview_id = f"preview-{self._generate_site_id(deployment.repository_name)}-{deployment.commit_sha[:7]}"
+            
+            # Clone or update the repository
+            repo_path = await self._clone_repository(
+                repository=deployment.repository_name,
+                commit_sha=deployment.commit_sha,
+                site_id=preview_id
+            )
+            
+            # Build the site with cache if possible
+            build_result = await self._build_site_with_cache(
+                repo_path=repo_path,
+                site_id=preview_id,
+                commit_sha=deployment.commit_sha
+            )
+            
+            # Configure the web server for the preview
+            await self._configure_webserver(
+                site_id=preview_id,
+                build_path=build_result["build_path"]
+            )
+            
+            # Generate the preview URL
+            preview_url = f"https://{preview_id}.{self.base_domain}"
+            
+            # Return preview information
+            return {
+                "url": preview_url,
+                "status": "deployed",
+                "site_id": preview_id,
+                "deployed_at": datetime.now().isoformat(),
+                "is_preview": True,
+                "build_cache_hit": build_result.get("cache_hit", False)
+            }
+            
+        except Exception as e:
+            logger.exception(f"Error creating preview for {deployment.repository_name}: {e}")
+            
+            # Return error information
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
+        finally:
+            # Track deployment time
+            duration = (datetime.now() - start_time).total_seconds()
+            track_deployment_time(
+                repository=deployment.repository_name,
+                duration=duration,
+                deployment_type="preview"
+            )
+    
+    async def deploy_rollback(self, deployment: Deployment, target_deployment: Deployment) -> Dict[str, Any]:
+        """
+        Deploy a rollback to a previous version.
+        
+        Args:
+            deployment: The current deployment
+            target_deployment: The deployment to rollback to
+            
+        Returns:
+            A dictionary with rollback deployment information
+        """
+        logger.info(f"Rolling back {deployment.repository_name} to {target_deployment.commit_sha[:7]}")
+        
+        # Start tracking deployment time
+        start_time = datetime.now()
+        
+        try:
+            # Use the same site ID as the current deployment
+            site_id = self._generate_site_id(deployment.repository_name)
+            
+            # Clone or update the repository to the target commit
+            repo_path = await self._clone_repository(
+                repository=deployment.repository_name,
+                commit_sha=target_deployment.commit_sha,
+                site_id=site_id
+            )
+            
+            # Build the site with cache if possible
+            build_result = await self._build_site_with_cache(
+                repo_path=repo_path,
+                site_id=site_id,
+                commit_sha=target_deployment.commit_sha
+            )
+            
+            # Configure the web server
+            await self._configure_webserver(
+                site_id=site_id,
+                build_path=build_result["build_path"]
+            )
+            
+            # Generate the site URL
+            site_url = f"https://{site_id}.{self.base_domain}"
+            
+            # Return rollback information
+            return {
+                "url": site_url,
+                "status": "deployed",
+                "site_id": site_id,
+                "deployed_at": datetime.now().isoformat(),
+                "is_rollback": True,
+                "build_cache_hit": build_result.get("cache_hit", False)
+            }
+            
+        except Exception as e:
+            logger.exception(f"Error rolling back {deployment.repository_name}: {e}")
+            
+            # Return error information
+            return {
+                "status": "failed",
+                "error": str(e)
+            }
+        finally:
+            # Track deployment time
+            duration = (datetime.now() - start_time).total_seconds()
+            track_deployment_time(
+                repository=deployment.repository_name,
+                duration=duration,
+                deployment_type="rollback"
+            )
+    
+    async def _build_site_with_cache(self, repo_path: str, site_id: str, commit_sha: str) -> Dict[str, Any]:
+        """
+        Build a site from a repository with caching.
+        
+        Args:
+            repo_path: The path to the repository
+            site_id: The site ID
+            commit_sha: The commit SHA
+            
+        Returns:
+            A dictionary with build information
+        """
+        # Check if we have a cached build for this commit
+        cache_path = os.path.join(self.hosting_root, "cache", commit_sha)
+        
+        if os.path.exists(cache_path):
+            logger.info(f"Using cached build for {commit_sha}")
+            
+            # Create the build directory
+            build_path = os.path.join(self.hosting_root, "sites", site_id)
+            os.makedirs(build_path, exist_ok=True)
+            
+            # Copy the cached build to the site directory
+            await self._run_command(
+                command=["cp", "-r", f"{cache_path}/.", build_path],
+                cwd=self.hosting_root
+            )
+            
+            return {
+                "build_path": build_path,
+                "site_id": site_id,
+                "cache_hit": True
+            }
+        
+        # No cached build, build from scratch
+        logger.info(f"No cached build found for {commit_sha}, building from scratch")
+        
+        # Build the site
+        build_result = await self._build_site(repo_path, site_id)
+        
+        # Cache the build
+        os.makedirs(cache_path, exist_ok=True)
+        await self._run_command(
+            command=["cp", "-r", f"{build_result['build_path']}/.", cache_path],
+            cwd=self.hosting_root
+        )
+        
+        build_result["cache_hit"] = False
+        return build_result
     
     async def delete_site(self, site_id: str) -> bool:
         """

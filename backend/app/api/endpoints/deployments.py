@@ -1,7 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Path
 
-from app.models.deployment import Deployment, DeploymentStatus
+from app.models.deployment import Deployment, DeploymentStatus, DeploymentType
 from app.services.deployment_service import DeploymentService
 
 router = APIRouter()
@@ -107,6 +107,88 @@ async def retry_deployment(
         commit_sha="abc123",
         branch="main",
         status=DeploymentStatus.PENDING,
+        deployment_type=DeploymentType.PRODUCTION,
         author="Demo User",
         commit_message="Initial commit"
     )
+
+@router.post("/{deployment_id}/preview", response_model=Deployment)
+async def create_preview(
+    deployment_id: str = Path(..., description="The ID of the deployment to create a preview from"),
+    current_user = Depends(get_current_user)
+):
+    """
+    Create a preview deployment from an existing deployment
+    """
+    deployment_service = DeploymentService()
+    preview_deployment = await deployment_service.create_preview_deployment(deployment_id)
+    
+    if not preview_deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    
+    return preview_deployment
+
+@router.post("/{deployment_id}/rollback/{target_deployment_id}", response_model=Deployment)
+async def rollback_deployment(
+    deployment_id: str = Path(..., description="The ID of the current deployment"),
+    target_deployment_id: str = Path(..., description="The ID of the deployment to rollback to"),
+    current_user = Depends(get_current_user)
+):
+    """
+    Rollback a deployment to a previous version
+    """
+    deployment_service = DeploymentService()
+    rollback_deployment = await deployment_service.rollback_deployment(deployment_id, target_deployment_id)
+    
+    if not rollback_deployment:
+        raise HTTPException(status_code=404, detail="One or both deployments not found")
+    
+    return rollback_deployment
+
+@router.get("/branch/{branch}", response_model=List[Deployment])
+async def list_branch_deployments(
+    branch: str = Path(..., description="The branch to list deployments for"),
+    repository: Optional[str] = None,
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user = Depends(get_current_user)
+):
+    """
+    List deployments for a specific branch
+    """
+    # In a real implementation, you would query your database for branch deployments
+    # For MVP, we'll return mock data
+    
+    # Mock branch deployments for demo purposes
+    deployments = [
+        Deployment(
+            id="branch1",
+            repository_name="user/repo1" if not repository else repository,
+            commit_sha="def456",
+            branch=branch,
+            status=DeploymentStatus.DEPLOYED,
+            deployment_type=DeploymentType.BRANCH,
+            url=f"https://{branch}--repo1.fly.dev",
+            author="Demo User",
+            commit_message=f"Update on {branch} branch"
+        ),
+        Deployment(
+            id="branch2",
+            repository_name="user/repo1" if not repository else repository,
+            commit_sha="ghi789",
+            branch=branch,
+            status=DeploymentStatus.FAILED,
+            deployment_type=DeploymentType.BRANCH,
+            author="Demo User",
+            commit_message=f"Another update on {branch} branch"
+        )
+    ]
+    
+    # Apply repository filter if provided
+    if repository:
+        deployments = [d for d in deployments if d.repository_name == repository]
+    
+    # Apply pagination
+    deployments = deployments[offset:offset+limit]
+    
+    return deployments
