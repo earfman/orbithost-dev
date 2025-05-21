@@ -14,14 +14,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info("Starting OrbitHost API")
 
-# Import API routers - wrapped in try/except to handle potential import errors
+# Import the centralized API router
 try:
-    from app.api.endpoints import users_db, context_api
-    logger.info("Successfully imported API endpoints")
+    from app.api.api import api_router
+    logger.info("Successfully imported API router")
+    has_api_router = True
 except ImportError as e:
-    logger.warning(f"Could not import API endpoints: {e}")
-    users_db = None
-    context_api = None
+    logger.warning(f"Could not import API router: {e}")
+    has_api_router = False
 
 # Create FastAPI app
 app = FastAPI(
@@ -39,14 +39,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routers if available
-if users_db is not None:
-    logger.info("Including users_db router")
-    app.include_router(users_db.router)
+# Include the API router if available
+if has_api_router:
+    logger.info("Including API router")
+    app.include_router(api_router)
+    logger.info("API router included successfully")
 
-if context_api is not None:
-    logger.info("Including context_api router")
-    app.include_router(context_api.router)
+    # Also include individual routers for backward compatibility
+    try:
+        from app.api.endpoints import users_db, context_api
+        app.include_router(users_db.router, prefix="")
+        app.include_router(context_api.router, prefix="")
+        logger.info("Individual API routers included for backward compatibility")
+    except ImportError as e:
+        logger.warning(f"Could not include individual API routers: {e}")
 
 # Health check endpoint for Fly.io
 @app.get("/health")

@@ -12,15 +12,14 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app.core.config import settings
+from app.utils.secrets import get_secret
+
 # Load environment variables
 load_dotenv()
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Supabase configuration
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Global client instance
 _supabase_client: Optional[Client] = None
@@ -30,28 +29,31 @@ _supabase_client: Optional[Client] = None
 async def get_supabase_client() -> Client:
     """
     Get a Supabase client instance.
-
+    
     Returns:
-        Client: Supabase client instance
+        Supabase client instance
     
     Raises:
-        ValueError: If Supabase URL or key is not configured
-        Exception: If client initialization fails
+        Exception: If Supabase connection fails
     """
     global _supabase_client
-
+    
     if _supabase_client is not None:
         return _supabase_client
-
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        raise ValueError("Supabase URL and key must be configured in environment variables")
-
+    
+    # Get Supabase credentials from settings or secrets manager
+    supabase_url = settings.SUPABASE_URL or get_secret("SUPABASE_URL")
+    supabase_key = settings.SUPABASE_KEY or get_secret("SUPABASE_KEY")
+    
+    if not supabase_url or not supabase_key:
+        raise ValueError("Supabase URL and key must be provided")
+    
     try:
-        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        _supabase_client = create_client(supabase_url, supabase_key)
         logger.info("Supabase client initialized successfully")
         return _supabase_client
     except Exception as e:
-        logger.error(f"Failed to initialize Supabase client: {str(e)}")
+        logger.error(f"Error initializing Supabase client: {str(e)}")
         raise
 
 

@@ -615,14 +615,16 @@ async def get_context_store() -> OrbitContextStore:
         # Load environment variables
         load_dotenv()
         
-        # Get Supabase URL and key
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        # Get Supabase credentials from settings or secrets manager
+        from app.core.config import settings
+        from app.utils.secrets import get_secret
         
-        # Use hardcoded values if environment variables are not found
+        supabase_url = settings.SUPABASE_URL or get_secret("SUPABASE_URL")
+        supabase_key = settings.SUPABASE_KEY or get_secret("SUPABASE_KEY")
+        
         if not supabase_url or not supabase_key:
-            supabase_url = "https://vyrlsfrohzaopgqndxgv.supabase.co"
-            supabase_key = os.getenv("SUPABASE_KEY")
+            logger.error("Supabase credentials not found. OrbitContext store cannot be initialized.")
+            raise ValueError("Supabase URL and key must be provided")
         
         _context_store = OrbitContextStore()
         _context_store.supabase_client = create_client(supabase_url, supabase_key)
